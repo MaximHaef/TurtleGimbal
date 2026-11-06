@@ -1,0 +1,14 @@
+# Parameters for the gimbal Pi. Values marked TBD are not chosen yet
+# (ARCHITECTURE.md 5.3). The nodes refuse to start until they are set.
+
+predictor:
+  ros__parameters: {}
+    # predictor_period: TBD  # s
+
+gimbal_control:
+  ros__parameters:
+    # control_period: TBD    # s, = dt
+    mode: feedback_only      # feedback_only | prediction_assisted
+
+vision:
+  ros__parameters: {}
