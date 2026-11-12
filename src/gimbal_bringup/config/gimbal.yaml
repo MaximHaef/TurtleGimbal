@@ -10,5 +10,15 @@ gimbal_control:
     # control_period: TBD    # s, = dt
     mode: feedback_only      # feedback_only | prediction_assisted
 
+imu_a:                       # gimbal_control imu_node (standalone IMU A publisher)
+  ros__parameters:
+    bus: 3                   # /dev/i2c-3, i2c-gpio overlay (GPIO23/24)
+    address: 0x4B
+    accel: true              # also read the accelerometer (incl. gravity)
+    report_interval: 0.01    # s, gyro (and accel) report period. Tested: 100 and 200 Hz OK; >= 250 Hz the
+                             # stream stalls without errors (Adafruit library + software I2C)
+    timeout: 0.1             # s without a sample -> error
+    frame_id: imu_a
+
 vision:
   ros__parameters: {}

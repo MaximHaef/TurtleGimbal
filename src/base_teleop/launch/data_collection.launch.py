@@ -4,7 +4,10 @@ Records everything to an MCAP bag and plays an excitation sequence on
 /cmd_vel. Optionally starts the gimbal nodes too. The base_command relay must
 already be running on the robot Pi.
 
-    ros2 launch base_teleop data_collection.launch.py sequence_file:=/path/to/steps.yaml [with_gimbal:=true]
+    ros2 launch base_teleop data_collection.launch.py sequence_file:=/path/to/steps.yaml [with_gimbal:=true] [with_imu:=false]
+
+with_imu (default true) starts the standalone IMU A publisher (/gimbal/imu_a).
+Turn it off once gimbal_control reads IMU A itself.
 """
 import os
 
@@ -20,6 +23,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     example = os.path.join(get_package_share_directory('base_teleop'), 'config', 'steps_example.yaml')
     gimbal = os.path.join(get_package_share_directory('gimbal_bringup'), 'launch', 'gimbal.launch.py')
+    params = os.path.join(get_package_share_directory('gimbal_bringup'), 'config', 'gimbal.yaml')
 
     return LaunchDescription([
         DeclareLaunchArgument('sequence_file', default_value=example),
@@ -27,6 +31,11 @@ def generate_launch_description():
                               description='Output directory of the rosbag'),
         DeclareLaunchArgument('with_gimbal', default_value='false',
                               description='Also start gimbal.launch.py (needs the TBD periods set)'),
+        DeclareLaunchArgument('with_imu', default_value='true',
+                              description='Start the standalone IMU A publisher (gimbal_control imu_node)'),
+        Node(package='gimbal_control', executable='imu_node', name='imu_a',
+             parameters=[params], output='screen',
+             condition=IfCondition(LaunchConfiguration('with_imu'))),
         IncludeLaunchDescription(PythonLaunchDescriptionSource(gimbal),
                                  condition=IfCondition(LaunchConfiguration('with_gimbal'))),
         ExecuteProcess(

@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'control_node = gimbal_control.control_node:main',
+            'imu_node = gimbal_control.imu_node:main',
         ],
     },
 )

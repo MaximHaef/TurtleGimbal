@@ -47,8 +47,8 @@ The robot base is a Kobuki (TurtleBot 2). Its velocity command is the body veloc
 | Gimbal computer | Raspberry Pi 4 Model B, RAM **TBD** | 4 GB or more recommended |
 | Gimbal | 3 axes: yaw (outer), pitch (middle), roll (inner) | Axis order must be verified on the hardware (Sec. II-A) |
 | Gimbal motors | DC motors with encoders, model **TBD** | Driven in velocity mode. The motor-level PI velocity loop needs encoder feedback; where it runs (motor driver or Pi) is **TBD** |
-| IMU A | On the gimbal base, model and bus **TBD** | Measures base angular velocity ω_gyr. Read by the gimbal Pi |
-| IMU B | In the camera frame of the gimbal, model and bus **TBD** | Measures residual camera motion. Read by the gimbal Pi |
+| IMU A | On the gimbal base. CEVA/Bosch **BNO08x** (board labelled HW-921 / GY-BNO055, but the chip is a BNO08x: SHTP protocol, address 0x4B). Software I2C bus 3 (`i2c-gpio` overlay, SDA GPIO23 / pin 16, SCL GPIO24 / pin 18), 3.3 V | Measures base angular velocity ω_gyr. Read by the gimbal Pi. Software I2C because the BNO08x stretches the clock, which the Pi's hardware I2C handles badly. PS0/PS1 are not broken out, so the board is I2C-only. INT not wired yet (data-ready; worth wiring for the control loop) |
+| IMU B | In the camera frame of the gimbal, model and bus **TBD** (if also a BNO08x: other address 0x4A, or its own `i2c-gpio` bus) | Measures residual camera motion. Read by the gimbal Pi |
 | Camera | USB or Pi Camera Module, **TBD** | Used for visual orientation feedback |
 | Link to TurtleBot | Short Ethernet cable | Not Wi-Fi |
 | Power | 5 V / 3 A from robot battery via buck converter | Separate supply for the gimbal motors |
@@ -115,7 +115,7 @@ Any other machine can drive the robot by publishing `/cmd_vel`; only one source 
 ### 4.3 gimbal_control node
 
 - Runs a fixed-rate loop with period Δt in a real-time thread pinned to a reserved CPU core.
-- Reads IMU A (gimbal base) and IMU B (camera frame) directly over I2C or SPI on the gimbal Pi, not through ROS topics.
+- Reads IMU A (gimbal base) and IMU B (camera frame) directly over I2C or SPI on the gimbal Pi, not through ROS topics. `gimbal_control/imu.py`: `ImuReader` polls the sensor in a background thread so a slow read never blocks the loop; `open_bno08x()` is the IMU A driver (gyro + accelerometer). Until the control loop reads IMU A itself, the standalone `imu_node` publishes it on `/gimbal/imu_a` (`sensor_msgs/Imu`, angular velocity and linear acceleration incl. gravity, no orientation, sensor frame `imu_a`) for data collection. Never run both on the same sensor. Tested on the Pi: gyro reports at 100 and 200 Hz arrive at the requested rate without read errors; at 250 Hz and above the stream stalls silently (no errors, the watchdog catches it), so 200 Hz is the current limit for IMU A.
 - Updates the proposal weights with each IMU A sample (eq. 8, log domain).
 - Takes the weighted-mean prediction at t + T_a, chosen by timestamp (eq. 9).
 - Computes q̇_ff and q̇_fb with the damped pseudo-inverse of the Jacobian (eqs. 2, 10).

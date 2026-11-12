@@ -8,6 +8,10 @@
   <license>TODO</license>
 
   <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <!-- pip, no rosdep key: adafruit-circuitpython-bno08x, adafruit-extended-bus -->
+
+  <test_depend>python3-pytest</test_depend>
 
   <export>
     <build_type>ament_python</build_type>
