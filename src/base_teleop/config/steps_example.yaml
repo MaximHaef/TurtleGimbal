@@ -1,0 +1,13 @@
+# EXAMPLE excitation sequence. Small values, only to test the pipeline.
+# Real sequences for identifying tau_v and tau_omega are still to be designed.
+# Each segment: duration [s], v [m/s], w [rad/s].
+segments:
+  - {duration: 2.0, v: 0.0,  w: 0.0}    # rest
+  - {duration: 3.0, v: 0.15, w: 0.0}    # step in v
+  - {duration: 2.0, v: 0.0,  w: 0.0}
+  - {duration: 3.0, v: 0.0,  w: 0.5}    # step in w, turn in place
+  - {duration: 2.0, v: 0.0,  w: 0.0}
+  - {duration: 3.0, v: 0.0,  w: -0.5}
+  - {duration: 2.0, v: 0.0,  w: 0.0}
+  - {duration: 3.0, v: 0.15, w: 0.4}    # combined
+  - {duration: 2.0, v: 0.0,  w: 0.0}

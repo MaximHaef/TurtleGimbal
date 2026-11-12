@@ -1,0 +1,9 @@
+# Parameters of the base_command relay on the robot Pi (ARCHITECTURE.md 4.1, 5.3).
+
+base_command:
+  ros__parameters:
+    publish_rate: 50.0        # Hz, rate of /commands/velocity and /base_command
+    request_timeout: 0.5      # s, zero output if no /cmd_vel request arrived for this long
+                              #    (must stay below kobuki_node cmd_vel_timeout_sec = 0.6)
+    track_width: 0.230        # m, b, Kobuki spec, to verify
+    wheel_speed_limit: 0.7    # m/s, v_max, Kobuki spec, to verify

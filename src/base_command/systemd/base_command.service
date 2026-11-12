@@ -1,0 +1,18 @@
+# Starts kobuki_node + base_command at boot on the robot Pi, so no SSH is needed for runs.
+# Install (on the robot Pi, see README.md):
+#   sudo cp base_command.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now base_command
+[Unit]
+Description=Kobuki driver and base_command relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=hungchun
+ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && source /home/hungchun/kobuki_ws/install/setup.bash && exec ros2 launch base_command base_command.launch.py'
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,23 @@
+{
+    "ros.distro": "humble",
+    "python.autoComplete.extraPaths": [
+        "/home/maxim/Documents/gimbal_project/TurtleGimbal/install/base_teleop/lib/python3.10/site-packages",
+        "/home/maxim/Documents/gimbal_project/TurtleGimbal/install/gimbal_bringup/lib/python3.10/site-packages",
+        "/home/maxim/Documents/gimbal_project/TurtleGimbal/install/gimbal_vision/lib/python3.10/site-packages",
+        "/home/maxim/Documents/gimbal_project/TurtleGimbal/install/gimbal_predictor/lib/python3.10/site-packages",
+        "/home/maxim/Documents/gimbal_project/TurtleGimbal/install/gimbal_control/lib/python3.10/site-packages",
+        "/home/maxim/Documents/gimbal_project/TurtleGimbal/install/base_command/lib/python3.10/site-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/home/maxim/Documents/gimbal_project/TurtleGimbal/install/base_teleop/lib/python3.10/site-packages",
+        "/home/maxim/Documents/gimbal_project/TurtleGimbal/install/gimbal_bringup/lib/python3.10/site-packages",
+        "/home/maxim/Documents/gimbal_project/TurtleGimbal/install/gimbal_vision/lib/python3.10/site-packages",
+        "/home/maxim/Documents/gimbal_project/TurtleGimbal/install/gimbal_predictor/lib/python3.10/site-packages",
+        "/home/maxim/Documents/gimbal_project/TurtleGimbal/install/gimbal_control/lib/python3.10/site-packages",
+        "/home/maxim/Documents/gimbal_project/TurtleGimbal/install/base_command/lib/python3.10/site-packages",
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages"
+    ]
+}

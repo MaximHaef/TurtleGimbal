@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>base_command</name>
+  <version>0.0.0</version>
+  <description>Robot Pi relay: forwards /cmd_vel to the Kobuki driver at a fixed rate and echoes the executed command on /base_command.</description>
+  <maintainer email="haefner.maxim@gmail.com">Maxim Häfner</maintainer>
+  <license>TODO</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <!-- kobuki_node is only needed on the robot Pi (launch file), so it is not declared
+       here; that keeps the package buildable on the gimbal Pi and laptops. -->
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

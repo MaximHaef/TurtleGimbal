@@ -16,23 +16,31 @@ Values marked **TBD** in ARCHITECTURE.md are not decided yet. When you measure o
 
 ## System at a glance
 
-- **TurtleBot** (differential drive, ROS2): drives the robot and publishes its velocity commands (`/cmd_vel`), wheel speeds and odometry. It has **no IMU**, and we do not modify its software.
-- **Gimbal Pi** (Raspberry Pi 4, Ubuntu + same ROS2 distro as the TurtleBot): runs all our code. Connected to the TurtleBot by Ethernet, clocks synced with chrony.
+- **Robot:** Kobuki (TurtleBot 2, differential drive) with its own Raspberry Pi running ROS2 Humble and the `kobuki_node` driver. It publishes wheel speeds, odometry and the data of its built-in gyro. We do not modify the driver; our only node there is the `base_command` relay.
+- **Gimbal Pi** (Raspberry Pi 4, Ubuntu + ROS2 Humble): runs all other code and normally sends the robot's velocity commands. Connected to the robot Pi by Ethernet, clocks synced with chrony.
 - **Gimbal:** yaw (outer) → pitch (middle) → roll (inner), driven by DC motors with encoders in velocity mode.
 - **IMU A** on the gimbal base and **IMU B** in the camera frame. Both are read directly by the gimbal Pi over I2C/SPI, not through ROS.
 - **Camera** for visual orientation feedback.
 
 ## Node structure
 
-All gimbal software runs on the gimbal Pi as three ROS2 nodes, each in its own process:
+The robot is driven by publishing `/cmd_vel` (from the gimbal Pi or any other machine). The `base_command` relay on the robot Pi forwards it to the driver and echoes the executed command, stamped, on `/base_command`, which is the predictor's input. The gimbal software runs on the gimbal Pi as three ROS2 nodes, each in its own process:
 
 ```
-TurtleBot ──/cmd_vel──►  predictor  ──M candidate trajectories──►  gimbal_control ──► motor driver
-                        (slow clock)                              (fast, fixed rate)
-                                                                    ▲   ▲
-                                              IMU A, IMU B (I2C/SPI)┘   │
-                                    camera ──► vision ──orientation error┘
+keyboard / excitation ──/cmd_vel──► base_command (robot Pi) ──► kobuki_node
+                                         │
+                                         └─/base_command─►  predictor  ──M candidate trajectories──►  gimbal_control ──► motor driver
+                                                           (slow clock)                              (fast, fixed rate)
+                                                                                                       ▲   ▲
+                                                                                 IMU A, IMU B (I2C/SPI)┘   │
+                                                                       camera ──► vision ──orientation error┘
 ```
+
+| Node | Package | Where | What it does |
+|---|---|---|---|
+| `base_command` | `base_command` | robot Pi | Relay: `/cmd_vel` → `/commands/velocity` at 50 Hz, with a 0.5 s timeout to zero and wheel-speed saturation; echoes the executed command on `/base_command`. See [src/base_command/README.md](src/base_command/README.md) for deployment and the hardware checklist. |
+| `keyboard` | `base_teleop` | gimbal Pi | Hold-to-drive keyboard teleop: `ros2 run base_teleop keyboard`. |
+| `excitation` | `base_teleop` | gimbal Pi | Plays a command sequence for data collection: `ros2 launch base_teleop data_collection.launch.py sequence_file:=...` (records an MCAP bag). |
 
 | Node | Package | What it does | Timing |
 |---|---|---|---|
@@ -58,8 +66,11 @@ src/
   gimbal_control/     control node
   gimbal_vision/      vision node
   gimbal_bringup/     launch file and parameters (config/gimbal.yaml)
+  base_teleop/        command sources for the robot (keyboard, excitation), data-collection launch
+  base_command/       relay node for the robot Pi (deployed there, not run on the gimbal Pi)
 ARCHITECTURE.md       engineering spec
 Bravo_Team.md         method paper
+Paper_changes.md      where the implementation deviates from the paper
 paper_figures/        figures for the paper
 ```
 
@@ -78,6 +89,9 @@ ros2 launch gimbal_bringup gimbal.launch.py
 
 ## Current status
 
-- Node framework is in place: the three nodes start, run their timers and shut down cleanly. The algorithms are `TODO`s marked with the paper's equation numbers.
-- No topics or custom messages are defined yet.
-- Open hardware decisions (TurtleBot model, ROS2 distro, motors and driver, IMUs, camera) are listed in ARCHITECTURE.md §7.
+- Node framework is in place: the three gimbal nodes start, run their timers and shut down cleanly. The algorithms are `TODO`s marked with the paper's equation numbers.
+- Robot command path is implemented (`base_command`, `base_teleop`) and tested locally; the hardware checklist in `src/base_command/README.md` is still open. The predictor subscribes to `/base_command`.
+- No custom messages are defined yet.
+- Open hardware decisions (motors and driver, IMUs, camera) are listed in ARCHITECTURE.md §7.
+
+Run the unit tests with `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 colcon test` if a user-installed pytest plugin (e.g. `typeguard`) breaks collection.
