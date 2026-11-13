@@ -1,0 +1,43 @@
+# Step sequence for identifying the base dynamics (tools/sysid, ARCHITECTURE.md 4.5).
+# Each segment: duration [s], v [m/s], w [rad/s]. Total 68.5 s; net forward travel and net rotation are zero.
+#
+# - Starts with 4 s at rest: the gyro bias is estimated from rest periods.
+# - Each step is held 3 s (several time constants) and followed by 2.5 s of rest,
+#   so both the step up and the step down can be fitted.
+# - Yaw steps turn in place (v = 0) at three amplitudes, both directions.
+# - Forward steps go back and forth, so the robot ends near its start.
+#   Needs about 0.5 m of free space in front of and behind the robot, plus room to turn.
+# - The combined steps check whether yaw behaves the same while driving.
+# All commands are far below the Kobuki wheel-speed limit.
+segments:
+  - {duration: 4.0, v: 0.0,  w: 0.0}
+
+  # yaw steps, turning in place
+  - {duration: 3.0, v: 0.0,  w: 0.3}
+  - {duration: 2.5, v: 0.0,  w: 0.0}
+  - {duration: 3.0, v: 0.0,  w: -0.3}
+  - {duration: 2.5, v: 0.0,  w: 0.0}
+  - {duration: 3.0, v: 0.0,  w: 0.6}
+  - {duration: 2.5, v: 0.0,  w: 0.0}
+  - {duration: 3.0, v: 0.0,  w: -0.6}
+  - {duration: 2.5, v: 0.0,  w: 0.0}
+  - {duration: 3.0, v: 0.0,  w: 1.0}
+  - {duration: 2.5, v: 0.0,  w: 0.0}
+  - {duration: 3.0, v: 0.0,  w: -1.0}
+  - {duration: 2.5, v: 0.0,  w: 0.0}
+
+  # forward steps, back and forth
+  - {duration: 3.0, v: 0.1,  w: 0.0}
+  - {duration: 2.5, v: 0.0,  w: 0.0}
+  - {duration: 3.0, v: -0.1, w: 0.0}
+  - {duration: 2.5, v: 0.0,  w: 0.0}
+  - {duration: 2.0, v: 0.2,  w: 0.0}
+  - {duration: 2.5, v: 0.0,  w: 0.0}
+  - {duration: 2.0, v: -0.2, w: 0.0}
+  - {duration: 2.5, v: 0.0,  w: 0.0}
+
+  # combined: yaw while driving
+  - {duration: 3.0, v: 0.1,  w: 0.5}
+  - {duration: 2.5, v: 0.0,  w: 0.0}
+  - {duration: 3.0, v: -0.1, w: -0.5}
+  - {duration: 3.0, v: 0.0,  w: 0.0}

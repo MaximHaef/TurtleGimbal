@@ -132,7 +132,7 @@ Any other machine can drive the robot by publishing `/cmd_vel`; only one source 
 ### 4.5 Offline tools (not on the Pi)
 
 - Extract training data from rosbags: contexts C^(i) and residual trajectories R^(i) relative to the physical model.
-- Identify τ_v and τ_ω from step responses of v_cmd and ω_z,cmd, using v and ω_z measured from `/joint_states` (eq. 5) or the gyros.
+- Identify τ_v and τ_ω (and the base dead time T_d) from step responses: `tools/sysid/fit_base_dynamics.py` fits a first-order-plus-dead-time model to `/base_command` against the Kobuki gyro (ω_z) and wheel odometry (v). Sequence `base_teleop/config/sysid_steps.yaml`; procedure in `tools/sysid/README.md`.
 - Measure the Kobuki wheel-speed limit.
 - Train the flow-matching model and export it to ONNX.
 - Evaluate prediction error and compare controller configurations.
@@ -176,14 +176,22 @@ Any other machine can drive the robot by publishing `/cmd_vel`; only one source 
 | Wheel radius | r | 0.035 m (to verify) | Kobuki specification. Only for converting `/joint_states` |
 | Track width | b | 0.230 m (to verify) | Kobuki specification. Only for converting `/joint_states` and the wheel-speed limit (`base_command` parameter `track_width`) |
 | Wheel-speed limit | v_max | about 0.7 m/s (to verify) | Kobuki firmware; measured (`base_command` parameter `wheel_speed_limit`) |
-| Speed time constant | τ_v | **TBD** | Step response |
-| Yaw-rate time constant | τ_ω | **TBD** | Step response |
+| Speed time constant | τ_v | 94 ms | Step response, `tools/sysid`, run `sysid_20260314_0116` (one run, gimbal mounted). First-order fit (R² 0.96); gain K = 0.74, T_d ≈ 0 |
+| Yaw-rate time constant | τ_ω | 120 ms | Step response, same run. First-order fit (R² 0.94); gain K = 0.66, T_d = 38 ms |
+| Base dead time (command → motion) | T_d | 38 ms (yaw), 0 ms (forward) | Same fit. Not in eq. (6); the physical model keeps K = 1 and T_d = 0, and the learned residual covers the rest (see note below) |
 | Control period | Δt | **TBD** | Design choice |
 | Actuation delay | T_a | **TBD** | Measured |
 | History length | H | **TBD** | Design choice |
 | Prediction horizon | F | **TBD** | From T4 |
 | Trajectory samples | M | **TBD** | Limited by Pi 4 compute |
 | Flow integration steps | N | **TBD** | Limited by Pi 4 compute |
+
+**Note on the base fit (`tools/sysid`):** The Kobuki is only roughly first-order. The values above are a compromise over all steps. What the learned residual has to cover:
+- **Speed shortfall:** the base reaches only 65–80% of the commanded speed, less at low wheel speeds (46% at 0.035 m/s). The wheel encoders and the gyro agree, so this is real.
+- **Starts vs. stops:** starts have ~130 ms (forward) / ~190 ms (yaw) dead time followed by a jump with overshoot; stops react within ~20–60 ms.
+- **Jolts:** at starts and stops, yaw-rate spikes reach up to 1.5× the final value.
+
+Repeat the run with a full battery before relying on the numbers.
 
 ## 6. Constraints and Risks
 
