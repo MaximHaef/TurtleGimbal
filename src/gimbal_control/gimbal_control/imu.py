@@ -87,12 +87,18 @@ class ImuReader:
                     self._on_sample(stamp, sample)
 
 
-def open_bno08x(bus, address, report_interval, accel=True):
+def open_bno08x(bus, address, report_interval, accel=True, dynamic_calibration=False):
     """Open a BNO08x on Linux I2C bus `bus`, enable the calibrated gyroscope and,
     if `accel`, the accelerometer (incl. gravity), both every `report_interval` s.
 
+    dynamic_calibration=False turns off the sensor's own running bias estimation
+    (accel, gyro, mag), so its output only changes with our stored calibration
+    (imu_calibration.py). The setting is not saved on the sensor; it is sent at
+    every start.
+
     Returns poll() for ImuReader, which yields one ImuSample per gyro report,
-    paired with the newest accelerometer report.
+    paired with the newest accelerometer report. poll.dynamic_calibration_ack is
+    True if the sensor acknowledged the calibration setting, None if not sent.
     Needs `adafruit-circuitpython-bno08x` and `adafruit-extended-bus` (pip).
     """
     from adafruit_bno08x import BNO_REPORT_ACCELEROMETER, BNO_REPORT_GYROSCOPE
@@ -120,9 +126,20 @@ def open_bno08x(bus, address, report_interval, accel=True):
     if accel:
         sensor.enable_feature(BNO_REPORT_ACCELEROMETER, interval_us)
 
+    ack = None
+    if not dynamic_calibration:
+        # SH-2 "configure ME calibration": accel, gyro, mag, subcommand 0 (config),
+        # planar, on-table, 3 reserved; all 0 = off. Private API of
+        # adafruit-circuitpython-bno08x (1.3.3): it waits for the response, and a
+        # successful response sets _me_calibration_started_at.
+        t0 = time.monotonic()
+        sensor._send_me_command([0, 0, 0, 0, 0, 0, 0, 0, 0])
+        ack = getattr(sensor, '_me_calibration_started_at', -1.0) > t0
+
     def poll():
         sensor._process_available_packets()
         new, sensor.new = sensor.new, []
         return new
 
+    poll.dynamic_calibration_ack = ack
     return poll

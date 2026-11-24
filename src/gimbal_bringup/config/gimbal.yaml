@@ -25,6 +25,8 @@ imu_a:                       # gimbal_control imu_node (standalone IMU A publish
                              # stream stalls without errors (Adafruit library + software I2C)
     timeout: 0.1             # s without a sample -> error
     frame_id: imu_a
+    dynamic_calibration: false  # BNO08x's own running bias estimation; off so imu_calibrate's result stays valid
+    calibration_file: ''     # absolute path to imu_calibrate YAML (src/gimbal_control/README.md); '' = uncalibrated
 
 vision:
   ros__parameters: {}

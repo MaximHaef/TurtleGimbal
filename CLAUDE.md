@@ -9,15 +9,15 @@ Full spec: [ARCHITECTURE.md](ARCHITECTURE.md). Method and equation numbers: [Bra
 - **Gimbal Pi** (Raspberry Pi 4, Ubuntu Server, ROS2 Humble): runs all gimbal software and normally sends the robot's commands. Wired Ethernet to the robot Pi, chrony time sync.
 - **Gimbal:** yaw (outer, base z) → pitch (middle, local y) → roll (inner, local x). `q = [ψ, θ, φ]`.
 - **Motors:** DC motors with encoders, velocity mode. Where the velocity PI loop runs is not decided.
-- **IMU A:** on the gimbal base, measures base angular velocity ω_gyr. **IMU B:** in the camera frame, measures residual camera motion. Both are read directly by the gimbal Pi over I2C/SPI, not through ROS topics.
+- **IMU A:** on the gimbal base, measures base angular velocity ω_gyr and specific force a_acc (accelerometer, gravity included). Both are ground truth for the predictor, after calibration and rotation into the base frame B. **IMU B:** in the camera frame, measures residual camera motion. Both are read directly by the gimbal Pi over I2C/SPI, not through ROS topics.
 - **Camera:** visual orientation feedback e_R.
 
 ## Nodes
 
 | Node | Job | Rules |
 |---|---|---|
-| `predictor` | Physical model (done): u_k from `/base_command` + v (`/odom`) and ω_z (Kobuki gyro) at t_k → eq. (6) rollout → F samples of acceleration [dv/dt, v·ω_z, 0] and angular velocity [0, 0, ω_z] on `/gimbal/physical_prediction` (`gimbal_interfaces/BaseMotionPrediction`, stamp t_k). TODO: context C_k = (u_k, last H samples of IMU A) → flow-matching residuals (eq. 7) → M candidate trajectories on `/gimbal/prediction` | Separate process, slower clock, all M samples in one batch, ONNX Runtime on CPU. Robot-Pi stamps are only compared with each other; staleness by local arrival time |
-| `gimbal_control` | Weight candidates with IMU A (eq. 8, log domain), take weighted mean at t + T_a (eq. 9), compute q̇_ff + q̇_fb via damped Jacobian pseudo-inverse (eqs. 2, 10), apply `Limit`, send q̇_cmd to motor driver | Fixed-rate real-time thread on a reserved core. Falls back to feedback-only without a valid prediction. Publishes all internal signals |
+| `predictor` | Physical model (done): u_k from `/base_command` + v (`/odom`) and ω_z (Kobuki gyro) at t_k → eq. (6) rollout → F samples of acceleration [dv/dt, v·ω_z, 0] and angular velocity [0, 0, ω_z] on `/gimbal/physical_prediction` (`gimbal_interfaces/BaseMotionPrediction`, stamp t_k). TODO: acceleration output as specific force at IMU A (add −ᴮg and lever-arm terms, Paper_changes.md §6); context C_k = (u_k, last H samples of IMU A gyro + accel) → flow-matching residuals on ω and a (eq. 7, d_r = 6) → M candidate trajectories on `/gimbal/prediction` | Separate process, slower clock, all M samples in one batch, ONNX Runtime on CPU. Robot-Pi stamps are only compared with each other; staleness by local arrival time |
+| `gimbal_control` | Weight candidates with IMU A gyro (eq. 8, log domain), take weighted mean at t + T_a and t + T_τ (eq. 9), compute q̇_ff + q̇_fb via damped Jacobian pseudo-inverse (eqs. 2, 10), apply `Limit`, send q̇_cmd to motor driver; inertial feedforward τ_ff = G(q) â(t + T_τ) (eq. 11, Paper_changes.md §6), interface to the motors TBD | Fixed-rate real-time thread on a reserved core. Falls back to feedback-only without a valid prediction. Publishes all internal signals |
 | `vision` | e_R = Log(ᶜR_Cd)^∨ on `/gimbal/orientation_error`, stamped with the image time | |
 | `base_command` (robot Pi) | `/cmd_vel` → hold + `request_timeout` → wheel-speed saturation → `/commands/velocity` (driver) and `/base_command` (`TwistStamped`, executed command) at a fixed rate | Only publisher to `/commands/velocity`. Sends zero when requests stop |
 | `keyboard`, `excitation` (gimbal Pi, `base_teleop`) | Command sources publishing `/cmd_vel` | Fixed rate; send zero on exit |
@@ -27,10 +27,10 @@ u_k = (v_cmd, ω_z,cmd) comes from `/base_command` (`twist.linear.x`, `twist.ang
 ## Must hold
 
 - Inference never blocks the control loop.
-- Prediction horizon F·Δt ≥ predictor period + T_a + `/base_command` latency.
+- Prediction horizon F·Δt ≥ predictor period + max(T_a, T_τ) + `/base_command` latency.
 - The robot stops when the command source or the link fails (`base_command` timeout).
 - Never run, deploy to, or edit anything on the robot Pi. Hardware tests and deployment are done by the user; write them as checklists (see `src/base_command/README.md`). Local tests that start ROS nodes use `ROS_LOCALHOST_ONLY=1` and a non-default `ROS_DOMAIN_ID`, so they cannot reach the robot.
-- Runtime switch between feedback-only and prediction-assisted control (for comparison).
+- Runtime switch between feedback-only and prediction-assisted control, and the inertial feedforward on/off separately (for comparison).
 - Log every input, internal signal and output to rosbag2 (MCAP).
 - Stop the motors safely if the control loop, an IMU or the motor driver fails.
 - Respect joint-angle, velocity and acceleration limits; keep the mechanical range away from cos θ = 0 (Jacobian singularity).
@@ -47,4 +47,4 @@ Python for predictor, vision and tools. Control loop in Python first, moved to C
 
 - Units: rad, rad/s, SI everywhere.
 - `ᴬR_B` maps vectors from frame B to frame A. Frames: W (world), B (base), C (camera).
-- Values still **TBD** (Δt, T_a, H, F, M, N, τ_v, τ_ω, r, b, hardware models) live in ARCHITECTURE.md §5. Do not invent them; update ARCHITECTURE.md when they are measured or chosen.
+- Values still **TBD** (Δt, T_a, T_τ, H, F, M, N, r, b, IMU A calibration ᴮR_A / r_A / K / b_a, gimbal mass properties, hardware models) live in ARCHITECTURE.md §5. Do not invent them; update ARCHITECTURE.md when they are measured or chosen.
