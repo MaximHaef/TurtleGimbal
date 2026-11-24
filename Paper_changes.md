@@ -57,3 +57,10 @@ Simpler alternative: drop eq. (5) entirely and state that commands are kept with
 - **Sec. II-D (Development Procedure) / Fig. 3:** τ_v and τ_ω are identified from step responses in v_cmd and ω_z,cmd. Fig. 3 needs no change unless it names wheel commands.
 - **Sec. II (robot description):** The Kobuki base has a built-in gyro. The paper's statement that the IMUs are part of the gimbal is still correct, but if the Kobuki gyro is used later (as context or as a reference), it has to be mentioned here and in Fig. 2.
 - **Fig. 2:** No change needed. The input is labelled only with the symbol u_k.
+
+## 5. Physical model output and initial state
+
+The implementation goes beyond the paper's planar model in two ways:
+
+- **Translational acceleration.** Besides the angular velocity [0, 0, ω_z], the physical model also outputs the base's translational acceleration in the base frame, [dv/dt, v·ω_z, 0] (forward plus centripetal, without gravity). If the paper keeps it, Sec. II-B-1 needs a sentence after eq. (6), for example: "From the predicted state, the base acceleration is $\mathbf{a} = [\dot v,\ v\,\omega_z,\ 0]^T$." Whether the learned residual also covers acceleration is still open (ARCHITECTURE.md §7).
+- **Initial state.** The rollout (4) starts from $\hat x_{k|k} = x_k$. In the implementation, x_k is measured at the command time t_k: v from wheel odometry and ω_z from the Kobuki gyro. The paper does not say where x_k comes from. A short statement in Sec. II-B would close that gap.

@@ -108,6 +108,14 @@ Any other machine can drive the robot by publishing `/cmd_vel`; only one source 
 - Runs in its own process, so that inference never blocks the control loop.
 - Subscribes to `/base_command` and builds the context C_k from the latest command u_k = (v_cmd, ω_z,cmd), normalized, and the last H samples of IMU A. A command older than `command_timeout` is not used; the predictor then publishes no prediction and gimbal_control falls back to feedback-only.
 - Rolls out the physical model and adds residuals sampled by flow matching (eq. 7, N Euler steps). The physical model is eq. (6) driven directly by u_k. The wheel-speed limit is already applied by `base_command`, and eq. (5) is not used here. Time constants τ_v and τ_ω.
+- **Physical model (implemented, `physical_model.py`):**
+  - **Start state:** v from `/odom` and ω_z from the Kobuki gyro (`/sensors/imu_data`), each the newest sample at or before the command stamp t_k (at most `state_timeout` older).
+  - **Rollout:** eq. (6) solved exactly with u_k held, for F samples at t_k + j·Δt.
+  - **Output** on `/gimbal/physical_prediction` (`gimbal_interfaces/BaseMotionPrediction`, stamp t_k), in the base frame:
+    - angular velocity [0, 0, ω_z]
+    - translational acceleration [dv/dt, v·ω_z, 0] (forward + centripetal, without gravity)
+  - **Clocks:** all inputs are stamped on the robot Pi and only compared with each other. Whether the command is current is judged by its arrival time on the gimbal Pi, so a clock offset between the Pis does not stop the predictor.
+  - **Parameters** in `gimbal.yaml`: `tau_v`, `tau_omega` (measured); `horizon_dt` (= Δt) and `horizon_steps` (= F) are TBD, and the node does not start without them.
 - Runs all M samples as one batch.
 - Publishes the M candidate trajectories X̂_k with the timestamp of step k.
 - Runs slower than the control loop. The horizon covers the time until the next inference plus T_a.
@@ -206,6 +214,7 @@ Repeat the run with a full battery before relying on the numbers.
 ## 7. Open Questions
 
 - Use the Kobuki gyro (`/sensors/imu_data_raw`) as extra context or as a reference for IMU A?
+- The physical model also predicts translational acceleration, but the flow-matching residual (`tools/flow_predictor`) has 3 channels (angular velocity). Should the residual also cover acceleration (d_r = 6), e.g. to weight candidates with IMU A's accelerometer too?
 - Which DC motors, encoders and motor driver? Does the driver close the velocity loop itself, or must the Pi do it?
 - Which IMUs, and on which buses?
 - Which camera?

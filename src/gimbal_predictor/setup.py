@@ -18,6 +18,7 @@ setup(
     maintainer_email='haefner.maxim@gmail.com',
     description='Predicts base angular velocity from robot commands (physical model + flow-matching residuals).',
     license='TODO',
+    tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'predictor_node = gimbal_predictor.predictor_node:main',

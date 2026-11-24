@@ -19,5 +19,6 @@
         "/home/maxim/Documents/gimbal_project/TurtleGimbal/install/base_command/lib/python3.10/site-packages",
         "/opt/ros/humble/lib/python3.10/site-packages",
         "/opt/ros/humble/local/lib/python3.10/dist-packages"
-    ]
+    ],
+    "cmake.sourceDirectory": "/home/maxim/Documents/gimbal_project/TurtleGimbal/src/gimbal_interfaces"
 }

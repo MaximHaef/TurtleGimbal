@@ -2,8 +2,14 @@
 # (ARCHITECTURE.md 5.3). The nodes refuse to start until they are set.
 
 predictor:
-  ros__parameters: {}
+  ros__parameters:
     # predictor_period: TBD  # s
+    # horizon_dt: TBD        # s, spacing of the predicted samples (= control period Δt)
+    # horizon_steps: TBD     # F, number of predicted samples (T4: F·Δt ≥ predictor period + T_a + latency)
+    tau_v: 0.094             # s, measured (tools/sysid, ARCHITECTURE.md 5.3)
+    tau_omega: 0.120         # s, measured (tools/sysid, ARCHITECTURE.md 5.3)
+    command_timeout: 0.2     # s, /base_command older than this (by arrival time) is not used
+    state_timeout: 0.1       # s, /odom and gyro samples must be at most this much older than the command
 
 gimbal_control:
   ros__parameters:

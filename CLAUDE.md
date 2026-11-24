@@ -16,7 +16,7 @@ Full spec: [ARCHITECTURE.md](ARCHITECTURE.md). Method and equation numbers: [Bra
 
 | Node | Job | Rules |
 |---|---|---|
-| `predictor` | Context C_k = (u_k, last H samples of IMU A) → physical model (eqs. 4–6) + flow-matching residuals (eq. 7) → M candidate trajectories, published on `/gimbal/prediction` with timestamp | Separate process, slower clock, all M samples in one batch, ONNX Runtime on CPU |
+| `predictor` | Physical model (done): u_k from `/base_command` + v (`/odom`) and ω_z (Kobuki gyro) at t_k → eq. (6) rollout → F samples of acceleration [dv/dt, v·ω_z, 0] and angular velocity [0, 0, ω_z] on `/gimbal/physical_prediction` (`gimbal_interfaces/BaseMotionPrediction`, stamp t_k). TODO: context C_k = (u_k, last H samples of IMU A) → flow-matching residuals (eq. 7) → M candidate trajectories on `/gimbal/prediction` | Separate process, slower clock, all M samples in one batch, ONNX Runtime on CPU. Robot-Pi stamps are only compared with each other; staleness by local arrival time |
 | `gimbal_control` | Weight candidates with IMU A (eq. 8, log domain), take weighted mean at t + T_a (eq. 9), compute q̇_ff + q̇_fb via damped Jacobian pseudo-inverse (eqs. 2, 10), apply `Limit`, send q̇_cmd to motor driver | Fixed-rate real-time thread on a reserved core. Falls back to feedback-only without a valid prediction. Publishes all internal signals |
 | `vision` | e_R = Log(ᶜR_Cd)^∨ on `/gimbal/orientation_error`, stamped with the image time | |
 | `base_command` (robot Pi) | `/cmd_vel` → hold + `request_timeout` → wheel-speed saturation → `/commands/velocity` (driver) and `/base_command` (`TwistStamped`, executed command) at a fixed rate | Only publisher to `/commands/velocity`. Sends zero when requests stop |
@@ -37,7 +37,7 @@ u_k = (v_cmd, ω_z,cmd) comes from `/base_command` (`twist.linear.x`, `twist.ang
 
 ## Workspace
 
-The repo root is the colcon workspace. Packages in `src/` (all `ament_python`): `gimbal_predictor`, `gimbal_control`, `gimbal_vision`, `gimbal_bringup` (launch file + `config/gimbal.yaml`), `base_teleop` (command sources + `data_collection.launch.py`), and `base_command` (deployed to and built on the robot Pi). Build with `colcon build`, run with `ros2 launch gimbal_bringup gimbal.launch.py`. Tests: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 colcon test` (a `typeguard` plugin in `~/.local` breaks pytest otherwise).
+The repo root is the colcon workspace. Packages in `src/` (all `ament_python` except `gimbal_interfaces`, which is `ament_cmake` for the custom messages): `gimbal_interfaces`, `gimbal_predictor`, `gimbal_control`, `gimbal_vision`, `gimbal_bringup` (launch file + `config/gimbal.yaml`), `base_teleop` (command sources + `data_collection.launch.py`), and `base_command` (deployed to and built on the robot Pi). Build with `colcon build`, run with `ros2 launch gimbal_bringup gimbal.launch.py`. Tests: `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 colcon test` (a `typeguard` plugin in `~/.local` breaks pytest otherwise).
 
 ## Stack
 
