@@ -57,6 +57,21 @@ def test_file_loads_and_obeys_constraints(tmp_path, args):
     assert command_at(segs, total + 0.01) is None
 
 
+def test_block_table_in_header(tmp_path):
+    out = write(tmp_path, '--box', '1.5')
+    text = out.read_text()
+    segs = load_sequence(str(out))
+    total = sum(d for d, _, _ in segs)
+    rows = [line.split() for line in text.splitlines() if line.startswith('#   segments')]
+    # ['#', 'segments', 'a-b', 't0-', 't1', 's', label...]
+    assert rows[0][2] == '0-0' and rows[0][-1] == 'rest'
+    assert rows[-1][2] == f'{len(segs) - 1}-{len(segs) - 1}' and rows[-1][-1] == 'end'
+    assert float(rows[-1][4]) == pytest.approx(total, abs=0.05)
+    firsts = [int(r[2].split('-')[0]) for r in rows]
+    lasts = [int(r[2].split('-')[1]) for r in rows]
+    assert firsts[1:] == [b + 1 for b in lasts[:-1]]          # blocks cover all segments without gaps
+
+
 def test_deterministic(tmp_path):
     a = ms.generate(box=1.5, seed=3)[0]
     b = ms.generate(box=1.5, seed=3)[0]

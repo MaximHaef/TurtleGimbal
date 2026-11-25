@@ -325,6 +325,19 @@ def generate(vmax=DEFAULT_VMAX, wmax=DEFAULT_WMAX, rounds=1, seed=0, box=1.5,
     return b.segments, b.blocks, b, sorted(notes)
 
 
+def block_table(segments, blocks):
+    """Lines 'segments a-b  t0-t1 s  label', one per block, to follow a run on the excitation log."""
+    t = [0.0]
+    for d, _, _ in segments:
+        t.append(t[-1] + d)
+    lines = []
+    for k, (first, label) in enumerate(blocks):
+        last = (blocks[k + 1][0] if k + 1 < len(blocks) else len(segments)) - 1
+        last = max(last, first)
+        lines.append(f'  segments {first:>4}-{last:<4} {t[first]:7.1f}-{t[last + 1]:7.1f} s  {label}')
+    return lines
+
+
 def to_yaml(segments, blocks, header):
     lines = [f'# {h}' if h else '#' for h in header]
     lines.append('segments:')
@@ -369,13 +382,15 @@ def main(argv=None):
         f'--box {a.box} --track-width {a.track_width} --wheel-speed-limit {a.wheel_speed_limit}',
         f'{len(segments)} segments, {total:.2f} s. Commanded path stays within {b.max_extent:.2f} m '
         f'of the start (box {a.box} m), ends at ({b.pose[0]:.3f}, {b.pose[1]:.3f}) m.',
-        'Each segment: duration [s], v [m/s], w [rad/s].',
-    ] + [f'Note: {n}' for n in notes]
+        'Each segment: duration [s], v [m/s] (+ forward), w [rad/s] (+ turn left).',
+    ] + [f'Note: {n}' for n in notes] + ['', 'Blocks (segment numbers as logged by the excitation node, time since start):'] \
+        + block_table(segments, blocks)
     with open(a.out, 'w', newline='\n') as f:
         f.write(to_yaml(segments, blocks, header))
 
     for n in notes:
         print(f'note: {n}')
+    print('\n'.join(block_table(segments, blocks)))
     print(f'{a.out}: {len(segments)} segments, {total:.2f} s ({total / 60:.1f} min), '
           f'seed {a.seed}, path within {b.max_extent:.2f} m of the start')
     return 0

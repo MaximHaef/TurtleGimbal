@@ -41,6 +41,30 @@ One round contains:
 
 Every segment is a multiple of 0.05 s (the excitation node runs at 20 Hz) and at least 0.25 s long. The first and last segment are rests (the sequence starts and ends with 5 s at rest). If the box is too small, straight segments and the speed ramp are shortened and a note is printed; if even that does not fit, the generator stops with an error.
 
+### Following a run
+
+While it runs, the excitation node logs every new segment as `segment N: v=... m/s, w=... rad/s`:
+
+- `N`: segment number, from 0.
+- `v`: forward speed in m/s; positive = forward, negative = backward.
+- `w`: yaw rate in rad/s; positive = turn left (counter-clockwise seen from above), negative = turn right.
+
+Which segment numbers belong to which block depends on `--box` and `--seed`. `make_sequence.py` prints the table and writes it into the header of the YAML file. For `excitation_box07_s1.yaml` (`--box 0.7 --seed 1`, 332 segments, 438.4 s):
+
+| Segments | Time [s] | Block | What the robot does |
+|---|---|---|---|
+| 0 | 0–5 | rest | stands still |
+| 1–12 | 5–58 | straight | slow, medium, fast; forward then back to the start, 2.5 s rest in between |
+| 13–24 | 58–97 | turn in place | three yaw rates, left then right |
+| 25–40 | 97–181 | turn while driving | drives an arc, then back along the same arc; left and right |
+| 41–64 | 181–245 | sysid steps | the steps of `sysid_steps.yaml`: sudden turns, drives and stops, 3 s each |
+| 65–224 | 245–294 | ramps | speed up in 0.25 s steps and back down, straight then turning; segment numbers run fast here |
+| 225–324 | 294–414 | random | a new random (v, w) every 0.5–2 s, many stops and starts |
+| 325–330 | 414–433 | return to start | turns towards the start, drives there, turns back to the start heading |
+| 331 | 433–438 | rest | stands still, end |
+
+The robot does not end exactly at its start: it reaches only part of the commanded speed, so the commanded return misses (about 0.6 m and 100° in the first run).
+
 ## 2. Record (done by you, at the robot)
 
 ### Stopping the robot
