@@ -147,6 +147,7 @@ Any other machine can drive the robot by publishing `/cmd_vel`; only one source 
 - Calibrate IMU A: static accelerometer/gyro calibration (`imu_calibrate`, `src/gimbal_control/README.md`), then mounting rotation ᴮR_A and lever arm r_A (not implemented yet).
 - Identify the gimbal mass properties for G(q) (CAD, or static joint torques at several base tilts) and the torque-path delay T_τ.
 - Identify τ_v and τ_ω (and the base dead time T_d) from step responses: `tools/sysid/fit_base_dynamics.py` fits a first-order-plus-dead-time model to `/base_command` against the Kobuki gyro (ω_z) and wheel odometry (v). Sequence `base_teleop/config/sysid_steps.yaml`; procedure in `tools/sysid/README.md`.
+- Training-data runs (F9): `tools/excitation/make_sequence.py` generates the excitation sequence (designed blocks + random segments, commanded path kept inside the free area, wheel speed below 0.9 × limit); `tools/excitation/check_bag.py` checks each bag right after recording. Procedure in `tools/excitation/README.md`.
 - Measure the Kobuki wheel-speed limit.
 - Train the flow-matching model and export it to ONNX.
 - Evaluate prediction error and compare controller configurations.
