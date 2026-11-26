@@ -143,63 +143,74 @@ python tools/excitation/export_bag.py bags/<bag> --sequence tools/excitation/seq
 
 `bags/` is in `.gitignore`. The bag names carry the robot Pi's date, which may be wrong; write the real date into meta.yaml.
 
-### 2.1 With IMU A (later): deploy (once, and after every code change)
+### 2.1 With IMU A, from the gimbal Pi: set up (once, and after every code change)
 
-When IMU A is connected, the relay, the IMU A publisher, the excitation and the recording can all run on the Pi that reads IMU A, with `data_collection.launch.py`.
+IMU A is wired to the gimbal Pi (`/dev/i2c-3`). The gimbal Pi runs the IMU A publisher, the excitation and the recording with `data_collection.launch.py`. The robot Pi runs only the driver and the `base_command` relay, as in the project rule (`base_command` is the only project node on the robot Pi). `base_teleop` on the robot Pi is only needed for the setup of §2.0.
 
-From the repo root on the laptop (PowerShell or bash):
+Copy the code to the gimbal Pi (from the repo root on the laptop; `<gimbal-pi>` is its user@address):
 
 ```bash
-scp -r src/base_teleop src/gimbal_control src/gimbal_bringup hungchun@192.168.50.175:~/kobuki_ws/src/
-scp -r tools hungchun@192.168.50.175:~/
-scp excitation_s1.yaml hungchun@192.168.50.175:~/
+scp -r src/base_teleop src/gimbal_interfaces src/gimbal_control src/gimbal_predictor src/gimbal_vision src/gimbal_bringup <gimbal-pi>:~/gimbal_ws/src/
+scp -r tools <gimbal-pi>:~/
+scp excitation_s1.yaml <gimbal-pi>:~/
 ```
 
-On the robot Pi:
+On the gimbal Pi:
 
 ```bash
-cd ~/kobuki_ws && colcon build --packages-select base_command base_teleop gimbal_control gimbal_bringup
-source ~/kobuki_ws/install/setup.bash
+cd ~/gimbal_ws && colcon build --packages-up-to base_teleop gimbal_bringup
+source ~/gimbal_ws/install/setup.bash
 mkdir -p ~/bags
 ```
 
-One-time checks on the robot Pi (only the first time):
+One-time checks (only the first time):
 
-- [ ] MCAP storage plugin installed (`data_collection.launch.py` records with `-s mcap`): `dpkg -l ros-humble-rosbag2-storage-mcap`. If missing: `sudo apt install ros-humble-rosbag2-storage-mcap`.
-- [ ] IMU A on `/dev/i2c-3` (i2c-gpio overlay, GPIO23/24): `ls /dev/i2c-3` exists and `i2cdetect -y 3` shows `4b`.
-- [ ] Python libraries of the IMU driver: `python3 -c "import adafruit_bno08x, adafruit_extended_bus"` prints nothing.
-- [ ] IMU A calibrated (`ros2 run gimbal_control imu_calibrate`, procedure in `src/gimbal_control/README.md`, run on the robot Pi). Copy the YAML to the robot Pi and set `calibration_file` of `imu_a` in `src/gimbal_bringup/config/gimbal.yaml` to its **absolute path on the robot Pi**, then rebuild `gimbal_bringup`. `accel: true`.
-- [ ] Standalone test without motion: `ros2 run gimbal_control imu_node --ros-args --params-file ~/kobuki_ws/install/gimbal_bringup/share/gimbal_bringup/config/gimbal.yaml` logs `IMU A: 100.0 Hz, 0 read errors in 5 s` and `calibration <path>`. Stop it with Ctrl-C before the run (only one process may read the sensor).
+- [ ] **Same ROS network:** both Pis use the same `ROS_DOMAIN_ID` (the robot Pi uses the default, 0), and neither sets `ROS_LOCALHOST_ONLY`. With the relay running on the robot Pi, `ros2 topic hz /base_command` **on the gimbal Pi** shows about 50 Hz.
+- [ ] **Clocks synced (chrony):** `/base_command`, `/odom` and the Kobuki gyro are stamped by the robot Pi, IMU A by the gimbal Pi. Training needs them on one time base (ARCHITECTURE.md T5, below 1 ms). The robot Pi's clock was 8 months off, so chrony is not working there yet. Set it up so that both Pis follow the same server (e.g. the gimbal Pi serves time to the robot Pi over the Ethernet link). On both Pis, `chronyc tracking` must show `Leap status: Normal` and a `System time` offset below 1 ms. Check it again before each recording day; `check_bag.py` also fails a bag with clocks more than 20 ms apart.
+- [ ] **Kobuki messages:** the excitation node needs `kobuki_ros_interfaces` to stop on bumper/cliff/wheel-drop/button events: `sudo apt install ros-humble-kobuki-ros-interfaces`. Without it, run with `stop_on_kobuki_events:=false`, or the node exits at start.
+- [ ] **MCAP storage plugin** (`data_collection.launch.py` records with `-s mcap`): `dpkg -l ros-humble-rosbag2-storage-mcap`. If missing: `sudo apt install ros-humble-rosbag2-storage-mcap`.
+- [ ] **IMU A** on `/dev/i2c-3` (i2c-gpio overlay, GPIO23/24): `ls /dev/i2c-3` exists and `i2cdetect -y 3` shows `4b`.
+- [ ] **IMU driver libraries:** `python3 -c "import adafruit_bno08x, adafruit_extended_bus"` prints nothing.
+- [ ] **IMU A calibrated** on the gimbal Pi: `ros2 run gimbal_control imu_calibrate`, procedure in `src/gimbal_control/README.md`. Set `calibration_file` of `imu_a` in `src/gimbal_bringup/config/gimbal.yaml` to the YAML's **absolute path on the gimbal Pi**, keep `accel: true` and `dynamic_calibration: false`, then rebuild `gimbal_bringup`. Repeat the calibration if IMU A is remounted or replaced.
+- [ ] **Standalone test** without motion: `ros2 run gimbal_control imu_node --ros-args --params-file ~/gimbal_ws/install/gimbal_bringup/share/gimbal_bringup/config/gimbal.yaml` logs `IMU A: 100.0 Hz, 0 read errors in 5 s`, `calibration <path>` and `BNO dynamic calibration off`. It publishes `/gimbal/imu_a` (calibrated) and `/gimbal/imu_a/raw` (sensor reports). Stop it with Ctrl-C before the run (only one process may read the sensor).
 
-### 2.2 With IMU A (later): run
+### 2.2 With IMU A, from the gimbal Pi: run
 
-The robot moves. **Keep a hand near the robot's power button.** Ctrl-C in terminal 2 stops the excitation (under `ros2 launch` the key stop is not available).
+The robot moves. **Keep a hand near the robot's power button.** Ctrl-C in the gimbal Pi terminal stops the excitation (under `ros2 launch` the key stop is not available).
 
 Before each run:
 
 - [ ] Gimbal mounted as it will be used (the load changes the dynamics).
 - [ ] IMU warmed up for about 5 min after power-on (gyro bias depends on temperature).
+- [ ] `chronyc tracking` on both Pis: offset below 1 ms.
 - [ ] Battery voltage noted.
 - [ ] Robot at the start pose, facing the x direction you used for `--box`.
 
-Two terminals on the robot Pi (ssh), each with `source ~/kobuki_ws/install/setup.bash`:
-
 ```bash
-# 1: driver + relay
+# robot Pi (ssh), terminal 1: driver + relay
+source ~/kobuki_ws/install/setup.bash
 ros2 launch base_command base_command.launch.py
 
-# 2: first check that the relay is up: about 50 Hz, then Ctrl-C
+# gimbal Pi (ssh), terminal 2: first check the relay over the network: about 50 Hz, then Ctrl-C
+source ~/gimbal_ws/install/setup.bash
 ros2 topic hz /base_command
-# 2: then IMU A + recording + excitation
+# gimbal Pi, terminal 2: then IMU A + recording + excitation
 ros2 launch base_teleop data_collection.launch.py \
-  sequence_file:=$HOME/excitation_s1.yaml bag:=$HOME/bags/<terrain>_<YYYYMMDD>_<n>
+  sequence_file:=$HOME/excitation_s1.yaml bag:=$HOME/bags/<terrain>_<YYYYMMDD>_<n> \
+  stop_on_kobuki_events:=false
 ```
+
+`stop_on_kobuki_events:=false` because of the faulty right bumper (see "Stopping the robot"); drop it once the bumper is fixed.
 
 **Always start terminal 1 first and check `/base_command`.** `ros2 bag record -a` itself subscribes to `/cmd_vel`, so the excitation node starts even without the relay, and a relay started late makes the robot begin in the middle of the sequence.
 
 The excitation starts 2 s after it finds a `/cmd_vel` subscriber. While it runs, `imu_a` logs its rate every 5 s; it should stay at 100 Hz with 0 read errors. When the excitation prints `sequence finished`, wait 2 s and stop terminal 2 with Ctrl-C (this also stops the recording).
 
-Right after the run, write `<bag>/meta.yaml` next to `metadata.yaml`:
+Right after the run, copy the IMU A calibration used into the bag and write `<bag>/meta.yaml` next to `metadata.yaml`:
+
+```bash
+cp <calibration_file from gimbal.yaml> ~/bags/<bag>/imu_a_calibration.yaml
+```
 
 ```yaml
 terrain: smooth_floor        # smooth_floor | tile_joints | carpet | threshold | outdoor_<surface>
@@ -211,14 +222,18 @@ seed: 1
 sequence_file: excitation_s1.yaml
 git_commit: 6c5dadc          # git rev-parse --short HEAD of the laptop repo the code was copied from
 imu_rate: 100                # Hz, 1 / report_interval in gimbal.yaml
+imu_calibration: imu_a_calibration.yaml   # copy in the bag directory; 'none' if calibration_file was empty
+dynamic_calibration: false   # gimbal.yaml imu_a dynamic_calibration
 operator: Tanya
 notes: ''                    # anything unusual: bumps, slip, interruptions
 ```
 
-## 3. Check (robot Pi, right after the run)
+The bag has IMU A twice: `/gimbal/imu_a` with the calibration applied, and `/gimbal/imu_a/raw` with the sensor reports. With the raw topic and the copied YAML, a bag can be calibrated again later, e.g. with a better calibration.
+
+## 3. Check (gimbal Pi, right after the run)
 
 ```bash
-source ~/kobuki_ws/install/setup.bash
+source ~/gimbal_ws/install/setup.bash
 python3 ~/tools/excitation/check_bag.py ~/bags/<bag> --sequence ~/excitation_s1.yaml --imu-rate 100
 ```
 
@@ -226,18 +241,19 @@ Reading MCAP bags needs `ros-humble-rosbag2-storage-mcap`. The check only reads 
 
 | Check | Fails when |
 |---|---|
-| `topics` | one of `/base_command`, `/cmd_vel`, `/gimbal/imu_a`, `/excitation/segment`, `/odom`, `/sensors/imu_data`, `/debug/raw_control_command` is missing |
+| `topics` | one of `/base_command`, `/cmd_vel`, `/gimbal/imu_a`, `/gimbal/imu_a/raw`, `/excitation/segment`, `/odom`, `/sensors/imu_data`, `/debug/raw_control_command` is missing |
 | `segments` | a segment was not played, played out of order, or played more than 0.15 s longer or shorter than in the YAML (interrupted run, stalled excitation) |
-| per topic | `/base_command` not 50 Hz ±5 %, `/cmd_vel` not 20 Hz, `/gimbal/imu_a` not `--imu-rate`, a gap longer than 3 periods (0.2 s for the other topics), stamps going backwards, or the topic does not cover the whole run |
+| per topic | `/base_command` not 50 Hz ±5 %, `/cmd_vel` not 20 Hz, `/gimbal/imu_a` or `/gimbal/imu_a/raw` not `--imu-rate`, a gap longer than 3 periods (0.2 s for the other topics), stamps going backwards, or the topic does not cover the whole run |
 | `IMU A accel` | IMU A published the gyro only |
+| `clock sync` | the robot Pi's stamps (`/base_command`) and IMU A's stamps differ by more than `--max-clock-offset` (20 ms, includes the network latency) relative to the recording time: chrony not synced. Catches gross errors only; the 1 ms requirement is checked with `chronyc tracking` |
 | `relay saturation` | `base_command` scaled the requests down (its wheel-speed limit is lower than the generator's) |
 | `firmware speed` | `/debug/raw_control_command` above 0.9 × wheel-speed limit |
 | `first/last rest IMU A gyro` | gyro mean at rest above 0.02 rad/s on an axis (calibration missing or wrong). Also prints the noise; compare first and last rest for drift |
-| `meta` | meta.yaml missing or incomplete |
+| `meta` | meta.yaml missing or incomplete, or the `imu_calibration` file is not in the bag directory |
 
 The Kobuki gyro bias at rest is printed for information only.
 
-Copy the bags to the laptop: `scp -r hungchun@192.168.50.175:~/bags/<bag> .`
+Copy the bags to the laptop: `scp -r <gimbal-pi>:~/bags/<bag> .`
 
 ## 4. What to record
 

@@ -4,10 +4,14 @@ Records everything to an MCAP bag and plays an excitation sequence on
 /cmd_vel. Optionally starts the gimbal nodes too. The base_command relay must
 already be running on the robot Pi.
 
-    ros2 launch base_teleop data_collection.launch.py sequence_file:=/path/to/steps.yaml [with_gimbal:=true] [with_imu:=false]
+    ros2 launch base_teleop data_collection.launch.py sequence_file:=/path/to/steps.yaml \
+        [bag:=DIR] [with_gimbal:=true] [with_imu:=false] [stop_on_kobuki_events:=false]
 
-with_imu (default true) starts the standalone IMU A publisher (/gimbal/imu_a).
-Turn it off once gimbal_control reads IMU A itself.
+with_imu (default true) starts the standalone IMU A publisher (/gimbal/imu_a,
+/gimbal/imu_a/raw). Turn it off once gimbal_control reads IMU A itself.
+stop_on_kobuki_events (default true) is passed to the excitation node: stop on
+Kobuki bumper, cliff, wheel-drop and button events. Needs
+kobuki_ros_interfaces on this machine.
 """
 import os
 
@@ -18,6 +22,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 
 def generate_launch_description():
@@ -33,6 +38,8 @@ def generate_launch_description():
                               description='Also start gimbal.launch.py (needs the TBD periods set)'),
         DeclareLaunchArgument('with_imu', default_value='true',
                               description='Start the standalone IMU A publisher (gimbal_control imu_node)'),
+        DeclareLaunchArgument('stop_on_kobuki_events', default_value='true',
+                              description='Excitation stops on Kobuki bumper/cliff/wheel-drop/button events'),
         Node(package='gimbal_control', executable='imu_node', name='imu_a',
              parameters=[params], output='screen',
              condition=IfCondition(LaunchConfiguration('with_imu'))),
@@ -42,6 +49,8 @@ def generate_launch_description():
             cmd=['ros2', 'bag', 'record', '-a', '-s', 'mcap', '-o', LaunchConfiguration('bag')],
             output='screen'),
         Node(package='base_teleop', executable='excitation', name='base_excitation',
-             parameters=[{'sequence_file': LaunchConfiguration('sequence_file')}],
+             parameters=[{'sequence_file': LaunchConfiguration('sequence_file'),
+                          'stop_on_kobuki_events': ParameterValue(LaunchConfiguration('stop_on_kobuki_events'),
+                                                                  value_type=bool)}],
              output='screen'),
     ])

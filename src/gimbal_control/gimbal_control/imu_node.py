@@ -1,4 +1,7 @@
-"""imu_node: publishes IMU A (gimbal base gyro + accelerometer) on /gimbal/imu_a.
+"""imu_node: publishes IMU A (gimbal base gyro + accelerometer).
+
+    /gimbal/imu_a      calibrated if `calibration_file` is set, else the sensor reports
+    /gimbal/imu_a/raw  always the sensor reports, so recorded bags can be calibrated again
 
 For data collection and testing while the control loop is not running. It uses
 the same ImuReader as gimbal_control. Do not run it together with a
@@ -10,8 +13,8 @@ Publishes sensor_msgs/Imu with angular velocity and linear acceleration
 yet. Stamped with the gimbal Pi's ROS clock when the sample is read.
 
 If `calibration_file` is set (YAML from `imu_calibrate`), the accelerometer
-matrix/bias and the gyro bias are applied before publishing; otherwise the
-sensor reports are published unchanged.
+matrix/bias and the gyro bias are applied to /gimbal/imu_a; otherwise both
+topics carry the same sensor reports.
 """
 import rclpy
 from rclpy.node import Node
@@ -42,6 +45,7 @@ class ImuNode(Node):
         self.calibration = ImuCalibration.load(cal_file) if cal_file else None
 
         self.pub = self.create_publisher(Imu, '/gimbal/imu_a', 50)
+        self.pub_raw = self.create_publisher(Imu, '/gimbal/imu_a/raw', 50)
         accel = g('accel')
         dyn_cal = g('dynamic_calibration')
         poll = open_bno08x(bus, address, interval, accel, dyn_cal)
@@ -63,8 +67,12 @@ class ImuNode(Node):
 
     def publish(self, stamp, sample):
         # Called from the reader thread; rclpy publishers are thread-safe.
+        self.pub_raw.publish(self.to_msg(stamp, sample))
         if self.calibration is not None:
             sample = self.calibration.apply(sample)
+        self.pub.publish(self.to_msg(stamp, sample))
+
+    def to_msg(self, stamp, sample):
         msg = Imu()
         msg.header.stamp = stamp.to_msg()
         msg.header.frame_id = self.frame_id
@@ -75,7 +83,7 @@ class ImuNode(Node):
         else:
             a = msg.linear_acceleration
             a.x, a.y, a.z = sample.accel
-        self.pub.publish(msg)
+        return msg
 
     def watchdog(self):
         age = self.reader.age()

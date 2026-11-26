@@ -7,14 +7,19 @@
 Run it right after each recording and record again if it prints FAIL.
 Checks:
   - every expected topic is present; rate and largest gap per topic (expected:
-    /base_command 50 Hz, /cmd_vel 20 Hz, /gimbal/imu_a --imu-rate); header
-    stamps in recording order never go backwards
+    /base_command 50 Hz, /cmd_vel 20 Hz, /gimbal/imu_a and /gimbal/imu_a/raw
+    --imu-rate); header stamps in recording order never go backwards
   - IMU A publishes the accelerometer, not only the gyro
+  - clock sync: /base_command is stamped by the robot Pi, IMU A by the Pi that
+    reads it. Both stamps minus the recording time must agree within
+    --max-clock-offset; otherwise the robot and the IMU clocks are not synced
+    (chrony) and IMU A cannot be aligned with the commands
   - every segment of the sequence was played, in order, for its duration
   - no saturation: base_command did not scale the /cmd_vel requests down,
     and /debug/raw_control_command stays below 0.9 x the wheel-speed limit
   - gyro bias and noise in the first and the last rest (IMU A, Kobuki gyro)
-  - <bag_dir>/meta.yaml exists and has all fields (README.md)
+  - <bag_dir>/meta.yaml exists and has all fields (README.md); the IMU A
+    calibration file it names is copied into <bag_dir>
 and ends with one line PASS or FAIL. Exit code 0 on PASS, 1 on FAIL.
 
 Topic statistics use the time window in which the sequence was playing.
@@ -38,9 +43,11 @@ WHEEL_MARGIN = 0.9
 
 RATE_TOPICS = {'/base_command': 50.0, '/cmd_vel': 20.0}   # Hz; /gimbal/imu_a from --imu-rate
 OTHER_TOPICS = ['/odom', '/sensors/imu_data', '/debug/raw_control_command']
-ALL_TOPICS = ['/base_command', '/cmd_vel', '/gimbal/imu_a', '/excitation/segment'] + OTHER_TOPICS
+IMU_TOPICS = ['/gimbal/imu_a', '/gimbal/imu_a/raw']        # calibrated, raw sensor reports
+ALL_TOPICS = ['/base_command', '/cmd_vel'] + IMU_TOPICS + ['/excitation/segment'] + OTHER_TOPICS
 META_FIELDS = ['terrain', 'date', 'battery_start', 'battery_end', 'gimbal_mounted', 'seed',
-               'sequence_file', 'git_commit', 'imu_rate', 'operator']
+               'sequence_file', 'git_commit', 'imu_rate', 'imu_calibration', 'dynamic_calibration',
+               'operator']
 
 RATE_TOLERANCE = 0.05      # relative
 GAP_FACTOR = 3.0           # largest allowed gap in nominal periods, for RATE_TOPICS and IMU A
@@ -64,7 +71,7 @@ def extract(records):
         elif topic == '/cmd_vel':
             d['v'] = np.array([m.linear.x for m in msgs], dtype=float)
             d['w'] = np.array([m.angular.z for m in msgs], dtype=float)
-        elif topic == '/gimbal/imu_a':
+        elif topic in IMU_TOPICS:
             d['gyro'] = np.array([[m.angular_velocity.x, m.angular_velocity.y, m.angular_velocity.z]
                                   for m in msgs], dtype=float).reshape(-1, 3)
             d['accel_provided'] = np.array([m.linear_acceleration_covariance[0] != -1.0 for m in msgs])
@@ -160,6 +167,13 @@ def rest_stats(t_rec, values, window, settle):
     return len(v), v.mean(axis=0), v.std(axis=0)
 
 
+def clock_offset(base, imu):
+    """Difference of the (stamp - recording time) medians: /base_command (robot Pi
+    clock) minus IMU A (clock of the Pi that reads it). Near zero, up to the
+    network latency of /base_command, when the clocks are synced."""
+    return float(np.median(base['t'] - base['t_rec']) - np.median(imu['t'] - imu['t_rec']))
+
+
 def check_meta(bag_dir):
     path = os.path.join(bag_dir, 'meta.yaml')
     if not os.path.exists(path):
@@ -169,11 +183,16 @@ def check_meta(bag_dir):
     missing = [k for k in META_FIELDS if meta.get(k) in (None, '')]
     if missing:
         return False, f'meta.yaml lacks {", ".join(missing)}'
-    return True, f'terrain {meta["terrain"]}, battery {meta["battery_start"]} -> {meta["battery_end"]}'
+    cal = str(meta['imu_calibration'])
+    if cal != 'none' and not os.path.exists(os.path.join(bag_dir, os.path.basename(cal))):
+        return False, f'IMU A calibration {os.path.basename(cal)} not copied into the bag directory'
+    return True, (f'terrain {meta["terrain"]}, battery {meta["battery_start"]} -> {meta["battery_end"]}, '
+                  f'IMU A calibration {cal}, BNO dynamic calibration {"on" if meta["dynamic_calibration"] else "off"}')
 
 
 def run_checks(data, segments, bag_dir, imu_rate=100.0, track_width=TRACK_WIDTH,
-               wheel_speed_limit=WHEEL_SPEED_LIMIT, max_gyro_bias=0.02, max_gap=0.2, settle=1.0):
+               wheel_speed_limit=WHEEL_SPEED_LIMIT, max_gyro_bias=0.02, max_gap=0.2, settle=1.0,
+               max_clock_offset=0.02):
     """Return a list of (status, name, text), status in PASS / FAIL / INFO."""
     res = []
     missing = [t for t in ALL_TOPICS if t not in data or data[t]['t'].size == 0]
@@ -189,7 +208,7 @@ def run_checks(data, segments, bag_dir, imu_rate=100.0, track_width=TRACK_WIDTH,
     ok, text, windows = check_segments(seg['t_rec'], seg['index'], segments)
     res.append(('PASS' if ok else 'FAIL', 'segments', text))
 
-    expected = dict(RATE_TOPICS, **{'/gimbal/imu_a': imu_rate})
+    expected = dict(RATE_TOPICS, **{t: imu_rate for t in IMU_TOPICS})
     for topic in ALL_TOPICS:
         if topic in missing or topic == '/excitation/segment':
             continue
@@ -218,6 +237,13 @@ def run_checks(data, segments, bag_dir, imu_rate=100.0, track_width=TRACK_WIDTH,
         ok = bool(np.all(provided))
         res.append(('PASS' if ok else 'FAIL', 'IMU A accel',
                     'present' if ok else f'missing in {np.sum(~provided)} samples (gimbal.yaml imu_a accel: true)'))
+
+    if '/base_command' not in missing and '/gimbal/imu_a' not in missing:
+        off = clock_offset(data['/base_command'], data['/gimbal/imu_a'])
+        ok = abs(off) <= max_clock_offset
+        res.append(('PASS' if ok else 'FAIL', 'clock sync',
+                    f'robot Pi stamps vs IMU A stamps: {off * 1e3:+.1f} ms incl. network latency'
+                    + ('' if ok else f' (above {max_clock_offset * 1e3:.0f} ms: chrony not synced?)')))
 
     if '/cmd_vel' not in missing and '/base_command' not in missing:
         c, b = data['/cmd_vel'], data['/base_command']
@@ -270,6 +296,8 @@ def main(argv=None):
                    help='largest IMU A gyro mean at rest [rad/s] (default %(default)s)')
     p.add_argument('--max-gap', type=float, default=0.2,
                    help='largest gap [s] for /odom, /sensors/imu_data, raw command (default %(default)s)')
+    p.add_argument('--max-clock-offset', type=float, default=0.02,
+                   help='largest robot-Pi vs IMU A stamp offset [s], incl. latency (default %(default)s)')
     p.add_argument('--settle', type=float, default=1.0, help='s skipped at the start of a rest (default %(default)s)')
     a = p.parse_args(argv)
 
@@ -278,7 +306,7 @@ def main(argv=None):
     segments = load_sequence(a.sequence)
     data = extract(read_records(a.bag, ALL_TOPICS))
     res = run_checks(data, segments, a.bag, a.imu_rate, a.track_width, a.wheel_speed_limit,
-                     a.max_gyro_bias, a.max_gap, a.settle)
+                     a.max_gyro_bias, a.max_gap, a.settle, a.max_clock_offset)
 
     print(f'bag {a.bag}, sequence {a.sequence}')
     width = max(len(name) for _, name, _ in res)

@@ -19,11 +19,16 @@ SEGMENTS = [(2.0, 0.0, 0.0), (1.0, 0.1, 0.0), (0.5, 0.0, 0.5), (1.0, 0.05, -0.3)
 BIAS = np.array([0.002, -0.001, 0.003])
 META = {'terrain': 'floor', 'date': '2026-11-25', 'battery_start': 16.4, 'battery_end': 16.1,
         'gimbal_mounted': True, 'seed': 0, 'sequence_file': 'seq.yaml', 'git_commit': 'abc1234',
-        'imu_rate': 100, 'operator': 'test'}
+        'imu_rate': 100, 'imu_calibration': 'none', 'dynamic_calibration': False, 'operator': 'test'}
 
 
-def synthetic(segments=SEGMENTS, imu_rate=100.0, t0=1000.0, scale=1.0, imu_gap=None, accel=True):
-    """Arrays as extract() returns them, for a run that played `segments` perfectly."""
+def synthetic(segments=SEGMENTS, imu_rate=100.0, t0=1000.0, scale=1.0, imu_gap=None, accel=True,
+              robot_clock=0.0):
+    """Arrays as extract() returns them, for a run that played `segments` perfectly.
+
+    robot_clock: offset [s] of the robot Pi's clock (stamps of /base_command,
+    /odom, /sensors/imu_data) from the clock of IMU A and the recorder.
+    """
     rng = np.random.default_rng(0)
     total = sum(d for d, _, _ in segments)
     ends = np.cumsum([d for d, _, _ in segments])
@@ -46,12 +51,12 @@ def synthetic(segments=SEGMENTS, imu_rate=100.0, t0=1000.0, scale=1.0, imu_gap=N
     v, w = command(t_bc - 0.003)
     v[(t_bc < 0) | (t_bc > total)] = 0.0
     w[(t_bc < 0) | (t_bc > total)] = 0.0
-    data['/base_command'] = {'t_rec': t0 + t_bc + 0.004, 't': t0 + 500.0 + t_bc,  # robot clock
+    data['/base_command'] = {'t_rec': t0 + t_bc + 0.004, 't': t0 + robot_clock + t_bc,  # robot clock
                              'v': scale * v, 'w': scale * w}
     speed = 1000 * (np.abs(scale * v) + np.abs(scale * w) * cb.TRACK_WIDTH / 2)
     data['/debug/raw_control_command'] = {'t_rec': t0 + t_bc + 0.004, 't': t0 + t_bc + 0.004, 'speed': speed}
-    data['/odom'] = {'t_rec': t0 + t_bc + 0.005, 't': t0 + 500.0 + t_bc, 'v': v}
-    data['/sensors/imu_data'] = {'t_rec': t0 + t_bc + 0.005, 't': t0 + 500.0 + t_bc,
+    data['/odom'] = {'t_rec': t0 + t_bc + 0.005, 't': t0 + robot_clock + t_bc, 'v': v}
+    data['/sensors/imu_data'] = {'t_rec': t0 + t_bc + 0.005, 't': t0 + robot_clock + t_bc,
                                  'gyro_z': w + 0.004 + rng.normal(0, 0.002, t_bc.shape)}
 
     t_imu = np.arange(-0.5, total + 1.0, 1.0 / imu_rate)
@@ -62,6 +67,7 @@ def synthetic(segments=SEGMENTS, imu_rate=100.0, t0=1000.0, scale=1.0, imu_gap=N
     gyro[:, 2] += w_imu
     data['/gimbal/imu_a'] = {'t_rec': t0 + t_imu + 0.001, 't': t0 + t_imu,
                              'gyro': gyro, 'accel_provided': np.full(t_imu.size, accel)}
+    data['/gimbal/imu_a/raw'] = dict(data['/gimbal/imu_a'])
     return data
 
 
@@ -131,6 +137,25 @@ def test_large_bias_fails(bag_dir):
     assert statuses(cb.run_checks(data, SEGMENTS, bag_dir))['first rest IMU A gyro'] == 'FAIL'
 
 
+def test_unsynced_clocks_fail(bag_dir):
+    s = statuses(cb.run_checks(synthetic(robot_clock=500.0), SEGMENTS, bag_dir))
+    assert s['clock sync'] == 'FAIL'
+    assert statuses(cb.run_checks(synthetic(robot_clock=0.010), SEGMENTS, bag_dir))['clock sync'] == 'PASS'
+
+
+def test_missing_raw_imu_fails(bag_dir):
+    data = synthetic()
+    del data['/gimbal/imu_a/raw']
+    assert statuses(cb.run_checks(data, SEGMENTS, bag_dir))['topics'] == 'FAIL'
+
+
+def test_calibration_file_must_be_in_bag(tmp_path):
+    (tmp_path / 'meta.yaml').write_text(yaml.safe_dump(dict(META, imu_calibration='imu_a_calibration.yaml')))
+    assert statuses(cb.run_checks(synthetic(), SEGMENTS, str(tmp_path)))['meta'] == 'FAIL'
+    (tmp_path / 'imu_a_calibration.yaml').write_text('accel_bias: [0, 0, 0]\n')
+    assert statuses(cb.run_checks(synthetic(), SEGMENTS, str(tmp_path)))['meta'] == 'PASS'
+
+
 def test_topic_stats():
     st = cb.topic_stats([0.0, 0.1, 0.2, 0.5])
     assert st['rate'] == pytest.approx(6.0)
@@ -189,18 +214,19 @@ def write_bag(path, data):
         m = stamp(Imu(), t)
         m.angular_velocity.z = float(g)
         rows.append((tr, '/sensors/imu_data', m))
-    d = data['/gimbal/imu_a']
-    for tr, t, g in zip(d['t_rec'], d['t'], d['gyro']):
-        m = stamp(Imu(), t)
-        m.angular_velocity.x, m.angular_velocity.y, m.angular_velocity.z = (float(x) for x in g)
-        m.linear_acceleration.z = 9.81
-        m.orientation_covariance[0] = -1.0
-        rows.append((tr, '/gimbal/imu_a', m))
+    for topic in cb.IMU_TOPICS:
+        d = data[topic]
+        for tr, t, g in zip(d['t_rec'], d['t'], d['gyro']):
+            m = stamp(Imu(), t)
+            m.angular_velocity.x, m.angular_velocity.y, m.angular_velocity.z = (float(x) for x in g)
+            m.linear_acceleration.z = 9.81
+            m.orientation_covariance[0] = -1.0
+            rows.append((tr, topic, m))
 
     types = {'/base_command': 'geometry_msgs/msg/TwistStamped', '/cmd_vel': 'geometry_msgs/msg/Twist',
              '/excitation/segment': 'std_msgs/msg/Int32', '/debug/raw_control_command': 'std_msgs/msg/Int16MultiArray',
              '/odom': 'nav_msgs/msg/Odometry', '/sensors/imu_data': 'sensor_msgs/msg/Imu',
-             '/gimbal/imu_a': 'sensor_msgs/msg/Imu'}
+             '/gimbal/imu_a': 'sensor_msgs/msg/Imu', '/gimbal/imu_a/raw': 'sensor_msgs/msg/Imu'}
     writer = rosbag2_py.SequentialWriter()
     writer.open(rosbag2_py.StorageOptions(uri=path, storage_id='sqlite3'),
                 rosbag2_py.ConverterOptions('cdr', 'cdr'))
@@ -223,4 +249,4 @@ def test_script_on_synthetic_bag(tmp_path, gap, code):
                        capture_output=True, text=True)
     print(r.stdout, r.stderr)
     assert r.returncode == code
-    assert r.stdout.strip().splitlines()[-1] == ('PASS' if code == 0 else 'FAIL: /gimbal/imu_a')
+    assert r.stdout.strip().splitlines()[-1] == ('PASS' if code == 0 else 'FAIL: /gimbal/imu_a, /gimbal/imu_a/raw')
