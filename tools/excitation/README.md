@@ -7,6 +7,40 @@ Training data for the flow-matching residual (F9, ARCHITECTURE.md §4.2, §4.5).
 | `make_sequence.py` | Writes a sequence YAML for the `excitation` node (format of `base_teleop/sequence.py`) |
 | `check_bag.py` | Post-run checks of a recorded bag, ends with PASS or FAIL (needs ROS2 and IMU A in the bag) |
 | `export_bag.py` | Exports a bag to one CSV per topic plus `overview.png` and `path.png`. Needs no ROS (`pip install rosbags matplotlib`) |
+| `sequences/` | Sequence files that were played on the robot (`excitation_box07_s1.yaml`: `--box 0.7 --seed 1`, 7.3 min) |
+
+## Quick start: one data-collection run
+
+What we run today: robot Pi only, no IMU A (details in §2.0). The robot Pi runs ROS2 Humble; the laptop needs no ROS. Run the commands from the repo root in a laptop PowerShell terminal.
+
+**0. Once (and after changing `base_teleop` or the sequence): copy to the robot Pi and build there.**
+
+```powershell
+scp -r src/base_teleop hungchun@192.168.50.175:~/kobuki_ws/src/
+scp tools/excitation/sequences/excitation_box07_s1.yaml hungchun@192.168.50.175:~/
+ssh hungchun@192.168.50.175 "source /opt/ros/humble/setup.bash; cd ~/kobuki_ws; rm -rf build/base_teleop install/base_teleop; colcon build --packages-select base_teleop"
+```
+
+**1. Before each run:** robot switched on, laptop on the robot's network (192.168.50.x), robot in the middle of the free area (1 m on every side) facing straight ahead, battery voltage noted, hand near the power button.
+
+**2. Run (about 7.5 min).** Starts the driver and relay, records the bag, plays the sequence, and cleans up afterwards. **Press space (or Ctrl-C) to stop the robot.**
+
+```powershell
+ssh -t hungchun@192.168.50.175 "trap true INT; source ~/kobuki_ws/install/setup.bash; mkdir -p ~/bags; B=~/bags/floor_`$(date +%Y%m%d_%H%M); ros2 launch base_command base_command.launch.py > /tmp/base_command.log 2>&1 & sleep 5; ros2 bag record -o `$B /base_command /cmd_vel /sensors/imu_data /sensors/imu_data_raw /odom /joint_states /debug/raw_control_command /excitation/segment /events/bumper /events/button > /tmp/bag.log 2>&1 & sleep 2; ros2 run base_teleop excitation --ros-args -p sequence_file:=`$HOME/excitation_box07_s1.yaml -p stop_on_kobuki_events:=false; sleep 2; kill -INT %2; sleep 2; kill %1; echo bag: `$B"
+```
+
+It ends with `bag: /home/hungchun/bags/floor_<date>_<time>`.
+
+**3. Copy the bag to the laptop and plot it** (replace `<bag>` with the name printed in step 2):
+
+```powershell
+scp -r hungchun@192.168.50.175:~/bags/<bag> bags/
+python tools/excitation/export_bag.py bags/<bag> --sequence tools/excitation/sequences/excitation_box07_s1.yaml
+```
+
+CSV files and `overview.png` / `path.png` are written to `bags/<bag>/export/`.
+
+**4. Put the robot back in the middle** before the next run; it ends up to about 0.6 m away from its start.
 
 ## 1. Generate a sequence (laptop)
 
@@ -85,7 +119,7 @@ Deploy `base_teleop` and the sequence (laptop, repo root), then build on the rob
 
 ```bash
 scp -r src/base_teleop hungchun@192.168.50.175:~/kobuki_ws/src/
-scp excitation_box07_s1.yaml hungchun@192.168.50.175:~/
+scp tools/excitation/sequences/excitation_box07_s1.yaml hungchun@192.168.50.175:~/
 # robot Pi:
 cd ~/kobuki_ws && rm -rf build/base_teleop install/base_teleop && colcon build --packages-select base_teleop
 ```
@@ -104,7 +138,7 @@ Look at the result on the laptop:
 
 ```bash
 scp -r hungchun@192.168.50.175:~/bags/<bag> bags/
-python tools/excitation/export_bag.py bags/<bag> --sequence excitation_box07_s1.yaml
+python tools/excitation/export_bag.py bags/<bag> --sequence tools/excitation/sequences/excitation_box07_s1.yaml
 ```
 
 `bags/` is in `.gitignore`. The bag names carry the robot Pi's date, which may be wrong; write the real date into meta.yaml.
