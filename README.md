@@ -74,6 +74,16 @@ Paper_changes.md      where the implementation deviates from the paper
 paper_figures/        figures for the paper
 ```
 
+## Connecting to the robot Pi
+
+The robot Pi runs Ubuntu 22.04 with ROS2 Humble; its workspace is `~/kobuki_ws` (packages `base_command`, `base_teleop`). From a laptop on the robot's network (192.168.50.x):
+
+```bash
+ssh hungchun@192.168.50.175
+```
+
+Ask the team for the password. Deploy code to it as described in [src/base_command/README.md](src/base_command/README.md). For a data-collection run, see the quick start in [tools/excitation/README.md](tools/excitation/README.md).
+
 ## Build and run
 
 Requires ROS2 (Humble or Jazzy; must match the TurtleBot). Write Python that runs on 3.10, so it works on both.
