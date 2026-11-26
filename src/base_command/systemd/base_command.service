@@ -9,6 +9,8 @@ Wants=network-online.target
 
 [Service]
 User=hungchun
+# ROS traffic only over the cable to the gimbal Pi (NETWORK.md §3); systemd does not read ~/.bashrc.
+Environment=FASTRTPS_DEFAULT_PROFILES_FILE=/home/hungchun/fastdds_eth0.xml
 ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && source /home/hungchun/kobuki_ws/install/setup.bash && exec ros2 launch base_command base_command.launch.py'
 Restart=on-failure
 RestartSec=3

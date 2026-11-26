@@ -219,7 +219,7 @@ Repeat the run with a full battery before relying on the numbers.
 
 - **Compute:** The Pi 4 limits the size of the flow-matching network and M × N. Measure inference time early.
 - **ROS2 distro:** Communication between different ROS2 distros is not officially supported. Both machines must run the same distro.
-- **Network:** Wi-Fi gives latency spikes and discovery problems with DDS. Use the wired link. Both Pis need the same `ROS_DOMAIN_ID` (robot Pi: default 0).
+- **Network:** Wi-Fi gives latency spikes and discovery problems with DDS. Use the wired link. Both Pis need the same `ROS_DOMAIN_ID` (robot Pi: default 0). Setup (static cable addresses, chrony, Fast DDS restricted to the cable, laptop access): [NETWORK.md](NETWORK.md).
 - **Python timing:** The global interpreter lock (GIL) and garbage collection can cause jitter. Keep inference in a separate process; move the control loop to C++ if T2 is not met.
 - **Jacobian singularity:** The Jacobian is singular at cos θ = 0. Damping limits command amplification, but the mechanical range should stay away from it.
 - **Translation:** Rotational compensation does not remove image motion caused by translation and scene depth.
