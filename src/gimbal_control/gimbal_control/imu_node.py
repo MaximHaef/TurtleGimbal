@@ -49,6 +49,7 @@ class ImuNode(Node):
         accel = g('accel')
         dyn_cal = g('dynamic_calibration')
         poll = open_bno08x(bus, address, interval, accel, dyn_cal)
+        self.poll = poll
         if poll.dynamic_calibration_ack is False:
             self.get_logger().warn('IMU A: sensor did not acknowledge turning off dynamic calibration')
         self.reader = ImuReader(poll, stamp=lambda: self.get_clock().now(),
@@ -56,7 +57,7 @@ class ImuNode(Node):
         self.reader.start()
 
         self._stale = False
-        self._last_count = (0, 0)
+        self._last_count = (0, 0, 0, 0, 0, 0)
         self.create_timer(self.timeout / 2, self.watchdog)
         self.create_timer(5.0, self.report)
         self.get_logger().info(
@@ -98,9 +99,18 @@ class ImuNode(Node):
 
     def report(self):
         n, e = self.reader.samples, self.reader.errors
-        n0, e0 = self._last_count
-        self._last_count = (n, e)
-        self.get_logger().info(f'IMU A: {(n - n0) / 5.0:.1f} Hz, {e - e0} read errors in 5 s')
+        p = self.poll
+        r, s, sr, ff = p.resets, p.stalls, p.soft_resets, p.invalid_reads
+        n0, e0, r0, s0, sr0, ff0 = self._last_count
+        self._last_count = (n, e, r, s, sr, ff)
+        msg = f'IMU A: {(n - n0) / 5.0:.1f} Hz, {e - e0} read errors in 5 s'
+        if (r, s, sr) != (r0, s0, sr0):
+            self.get_logger().warn(
+                f'{msg}, sensor reset {r - r0}x / stalled {s - s0}x / soft reset sent {sr - sr0}x, '
+                f'{ff - ff0} 0xFF reads (reports re-enabled; total {r} resets, {s} stalls, {sr} soft '
+                f'resets; dynamic calibration ack after re-enable: {p.dynamic_calibration_ack})')
+        else:
+            self.get_logger().info(msg)
 
     def destroy_node(self):
         self.reader.stop()

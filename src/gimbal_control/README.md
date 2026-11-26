@@ -17,7 +17,7 @@ It runs on a **software I2C bus** (`/dev/i2c-3`), not the Pi's hardware I2C. The
 | ADR / ADD | open | The board pulls it high → 0x4B. Low → 0x4A |
 | INT | open | Data-ready output. Optional, for reading on data-ready instead of polling |
 | BOOT | open | **Never to GND**: low at reset starts the firmware-update mode |
-| RST | open | |
+| RST | open | Touching it (or BOOT) resets the sensor. Insulate the open pins, or better tie RST to 3.3 V via ~10 kΩ |
 
 A second BNO08x (IMU B) can't share the bus at the same address. Either pull its ADR low (0x4A), or better, give it its own software bus (e.g. `bus=4` on GPIO5/6, pins 29/31), so one stalled sensor can't block the other.
 
@@ -45,6 +45,8 @@ A second BNO08x (IMU B) can't share the bus at the same address. Either pull its
 
 `imu_node` and `imu_calibrate` use bus 3 and 0x4B by default (`gimbal.yaml`). Tested: gyro reports at 100 and 200 Hz arrive at the requested rate; at 250 Hz and above the stream stalls without errors.
 
+**Sensor resets.** The BNO08x resets itself when RST/BOOT is touched, a wire is loose, or the supply glitches. Seen on the bench (2026-11-26): a corrupt read, ~3 s without data, ~3 s of `[Errno 6] No such device or address`, then a "reset complete" packet. After a reset it has no reports enabled and its own dynamic calibration is on again. `open_bno08x` (`Bno08xPoller`) catches the reset-complete packet and enables the reports and the `dynamic_calibration` setting again, retrying while the sensor boots; it does the same after 1 s without a sample (a stall), and if that brings no sample within another second (the sensor hangs, e.g. reads only 0xFF) it sends a soft reset first, as at startup. All-0xFF reads are counted, not printed. `imu_node` logs a warning with the count in its 5 s report; `imu_calibrate` discards a pose recorded across a reset or stall. The data around a reset is missing (a few seconds), so a reset during a recording shows up as a gap in the bag.
+
 ## IMU A static calibration
 
 `imu_calibrate` fits, in the sensor frame:
@@ -63,7 +65,8 @@ The fit is applied on top of the BNO08x reports that `open_bno08x` enables (the 
 1. Stop everything else that reads IMU A (`imu_node`, `gimbal_control`). Only one process may talk to the sensor.
 2. Let the IMU warm up for about 5 min after power-on. Gyro bias depends on temperature.
 3. `source install/setup.bash`, then `ros2 run gimbal_control imu_calibrate`. It must not print `sensor did not acknowledge turning off dynamic calibration`; if it does, stop and report it. Options: `--bus 3 --address 0x4B --report-interval 0.01` (the defaults match `gimbal.yaml`), `--gravity <local g>`, `--duration 3`, `--out DIR`.
-4. For each pose: put the IMU (or the whole gimbal base) down still, in a new orientation, and press Enter. The script waits 1 s, records 3 s, and rejects the pose if it moved or is within 15° of an earlier pose.
+4. For each pose: put the IMU (or the whole gimbal base) down still, in a new orientation, and press Enter. The script waits 1 s, records 3 s, and rejects the pose if it moved, is within 15° of an earlier pose, or the sensor reset meanwhile.
+   - Hold it by the board edges or the mount, not by the pins: a finger on RST/BOOT resets the sensor.
    - First the 6 poses with each axis up and down, then 8–12 tilted ones (cube edges and corners).
    - Resting it on a surface or against a block is better than holding it by hand.
    - Watch `coverage`. It should end well above 0.1; 1/3 is a perfectly even spread.

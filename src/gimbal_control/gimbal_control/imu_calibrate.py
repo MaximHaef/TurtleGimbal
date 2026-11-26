@@ -166,10 +166,18 @@ def capture(args, out_dir):
                 print('unknown command')
                 continue
 
+            interruptions = poll.interruptions
             time.sleep(args.settle)
             a, g = col.record(args.duration)
+            if poll.interruptions != interruptions:
+                print(f'  IMU reset or stalled during this pose, not used (so far: {poll.resets} resets, '
+                      f'{poll.stalls} stalls, {poll.soft_resets} soft resets sent, {poll.invalid_reads} '
+                      '0xFF reads). Wait until it records again, then retry. Touching the unconnected '
+                      'RST/BOOT pins or a loose wire resets it.')
+                continue
             if len(a) < 2:
-                print(f'only {len(a)} samples recorded (read errors: {reader.errors}); try again')
+                print(f'only {len(a)} samples recorded (read errors: {reader.errors}, '
+                      f'last: {reader.last_error!r}); try again')
                 continue
             w = window_stats(a, g)
             norm = np.linalg.norm(w.accel_mean)
